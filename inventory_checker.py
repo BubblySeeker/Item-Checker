@@ -191,14 +191,14 @@ def update_oos_tracking(tracking_data, item_info):
     return tracking_data
 
 
-def send_email_report(oos_items, in_stock_items, failed_items, total_items):
-    """Send email report with OOS items, in-stock items, and failed items."""
+def send_email_report(oos_items, in_stock_items, failed_items, not_found_items, total_items):
+    """Send email report with OOS items, in-stock items, failed items, and not found items."""
     if not EMAIL_FROM or not EMAIL_TO or not EMAIL_PASSWORD:
         print("⚠️  Email not configured. Skipping email report.")
         print("Set EMAIL_FROM, EMAIL_TO, and EMAIL_PASSWORD in .env file")
         return
 
-    subject = f"Sams Club Stock Checker - {datetime.now().strftime('%Y-%m-%d')}"
+    subject = f"Sam's Club Stock Checker - {datetime.now().strftime('%Y-%m-%d')}"
 
     # Build HTML email body
     html = f"""
@@ -211,22 +211,23 @@ def send_email_report(oos_items, in_stock_items, failed_items, total_items):
             th {{ background-color: #4CAF50; color: white; }}
             tr:nth-child(even) {{ background-color: #f2f2f2; }}
             .summary {{ margin: 20px 0; padding: 10px; background-color: #f0f0f0; }}
+            .warning {{ background-color: #fff3cd; }}
         </style>
     </head>
     <body>
-        <h2>Sams Club Stock Checker</h2>
+        <h2>Sam's Club Stock Checker</h2>
         <p>Date: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
 
         <div class="summary">
             <h3>Summary</h3>
             <p>Total Items Monitored: <strong>{total_items}</strong></p>
-            <p>Successfully Checked: <strong>{len(in_stock_items) + len(oos_items)}</strong></p>
-            <p>In Stock: <strong>{len(in_stock_items)}</strong></p>
-            <p>Out of Stock: <strong>{len(oos_items)}</strong></p>
-            <p>Failed to Check: <strong>{len(failed_items)}</strong></p>
+            <p>In Stock: <strong style="color: green;">{len(in_stock_items)}</strong></p>
+            <p>Out of Stock: <strong style="color: red;">{len(oos_items)}</strong></p>
+            <p>Not Found on Website: <strong style="color: orange;">{len(not_found_items)}</strong></p>
+            <p>Failed to Check: <strong style="color: #dc3545;">{len(failed_items)}</strong></p>
         </div>
 
-        <h3>Out of Stock Items</h3>
+        <h3>Out of Stock Items ({len(oos_items)})</h3>
     """
 
     if oos_items:
@@ -258,11 +259,36 @@ def send_email_report(oos_items, in_stock_items, failed_items, total_items):
     else:
         html += "<p>🎉 All items are in stock!</p>"
 
+    # Show items not found on website
+    if not_found_items:
+        html += f"""
+        <br>
+        <h3>Items Not Found on Website ({len(not_found_items)})</h3>
+        <p style="color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 5px;">
+            <strong>Note:</strong> These items could not be found on Sam's Club website. They may be discontinued, delisted, or have incorrect item numbers.
+        </p>
+        <table>
+            <tr>
+                <th>Item #</th>
+                <th>Status</th>
+            </tr>
+        """
+
+        for item_num in sorted(not_found_items):
+            html += f"""
+            <tr class="warning">
+                <td>{item_num}</td>
+                <td style="color: orange; font-weight: bold;">NOT FOUND ON WEBSITE</td>
+            </tr>
+            """
+
+        html += "</table>"
+
     # Show all IN STOCK items
     if in_stock_items:
-        html += """
+        html += f"""
         <br>
-        <h3>In Stock Items</h3>
+        <h3>In Stock Items ({len(in_stock_items)})</h3>
         <table>
             <tr>
                 <th>Item #</th>
@@ -502,8 +528,13 @@ def main():
     # Get in-stock items
     in_stock_items = [r for r in results if r.get('in_stock', False)]
 
+    # Find items not found on website (items in Excel but not in results)
+    checked_item_numbers = set(r['item_number'] for r in results)
+    excel_item_numbers = set(items)
+    not_found_items = sorted(excel_item_numbers - checked_item_numbers)
+
     # Send email report
-    send_email_report(oos_items, in_stock_items, failed_items, len(items))
+    send_email_report(oos_items, in_stock_items, failed_items, not_found_items, len(items))
 
     print("\n" + "=" * 70)
     print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}")
