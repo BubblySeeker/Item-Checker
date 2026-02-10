@@ -66,12 +66,12 @@ def check_item_stock(item_number, max_retries=3):
 
     for attempt in range(max_retries):
         try:
-            # Longer timeout for better reliability
+            # Balanced timeout for reliability
             result = subprocess.run(
-                ['curl', '--max-time', '60', '-s', url],
+                ['curl', '--max-time', '30', '-s', url],
                 capture_output=True,
                 text=True,
-                timeout=65
+                timeout=35
             )
 
             if result.returncode == 0 and result.stdout:
@@ -258,11 +258,11 @@ def send_email_report(oos_items, in_stock_items, failed_items, total_items):
     else:
         html += "<p>🎉 All items are in stock!</p>"
 
-    # Also show IN STOCK items (first 10 as sample)
+    # Show all IN STOCK items
     if in_stock_items:
         html += """
         <br>
-        <h3>In Stock Items (Showing First 10)</h3>
+        <h3>In Stock Items</h3>
         <table>
             <tr>
                 <th>Item #</th>
@@ -272,7 +272,7 @@ def send_email_report(oos_items, in_stock_items, failed_items, total_items):
             </tr>
         """
 
-        for item in in_stock_items[:10]:
+        for item in in_stock_items:
             html += f"""
             <tr>
                 <td>{item.get('item_number', 'N/A')}</td>
@@ -283,8 +283,6 @@ def send_email_report(oos_items, in_stock_items, failed_items, total_items):
             """
 
         html += "</table>"
-        if len(in_stock_items) > 10:
-            html += f"<p><em>...and {len(in_stock_items) - 10} more in-stock items</em></p>"
 
     # Show failed items
     if failed_items:
@@ -358,18 +356,15 @@ def main():
     oos_items = []
     failed_items = []
 
-    for i, item_number in enumerate(items, 1):
-        print(f"[{i}/{len(items)}] Checking item {item_number}...", end=' ', flush=True)
+    def check_and_update(item_number, index, total, pass_name=""):
+        """Helper function to check an item and update tracking. Returns (success, item_info)."""
+        print(f"[{index}/{total}] {pass_name}Checking item {item_number}...", end=' ', flush=True)
 
         item_info = check_item_stock(item_number)
 
-        # Small delay between requests to avoid rate limiting
-        if i < len(items):
-            import time
-            time.sleep(1)
-
         if item_info and not item_info.get('error'):
             # Successfully checked
+            nonlocal tracking_data
             tracking_data = update_oos_tracking(tracking_data, item_info)
             results.append(item_info)
 
@@ -383,14 +378,96 @@ def main():
             else:
                 qty = item_info.get('quantity', 'Unknown')
                 print(f"✅ In stock (Qty: {qty})")
+            return True, item_info
         else:
             # Failed to check
-            failed_items.append({
-                'item_number': item_number,
-                'name': item_info.get('name', 'Unknown') if item_info else 'Unknown',
-                'error': item_info.get('error', 'No response') if item_info else 'No response'
-            })
-            print("⚠️  Failed to check")
+            error_msg = item_info.get('error', 'No response') if item_info else 'No response'
+            if error_msg == 'Item not found in search':
+                print("❌ Item not found (discontinued/no page)")
+            else:
+                print(f"⚠️  Failed to check - {error_msg}")
+            return False, item_info
+
+    # Initial pass through all items
+    for i, item_number in enumerate(items, 1):
+        success, item_info = check_and_update(item_number, i, len(items))
+
+        if not success:
+            error_msg = item_info.get('error', 'No response') if item_info else 'No response'
+
+            # Only add to retry list if it's not a "item not found" error
+            # Items not found = discontinued/no page, no point retrying
+            if error_msg != 'Item not found in search':
+                failed_items.append({
+                    'item_number': item_number,
+                    'name': item_info.get('name', 'Unknown') if item_info else 'Unknown',
+                    'error': error_msg
+                })
+
+        # Small delay between requests to avoid rate limiting
+        if i < len(items):
+            import time
+            time.sleep(1)
+
+    # Retry failed items - First retry pass
+    if failed_items:
+        print(f"\n{'=' * 70}")
+        print(f"RETRY PASS 1: Retrying {len(failed_items)} failed items...")
+        print(f"{'=' * 70}\n")
+
+        first_retry_failed = []
+        for i, failed_item in enumerate(failed_items, 1):
+            item_number = failed_item['item_number']
+            success, item_info = check_and_update(item_number, i, len(failed_items), "RETRY 1 - ")
+
+            if not success:
+                # Update error message in case it changed
+                error_msg = item_info.get('error', 'No response') if item_info else 'No response'
+                # Only keep in retry list if it's not a "item not found" error
+                if error_msg != 'Item not found in search':
+                    first_retry_failed.append({
+                        'item_number': item_number,
+                        'name': item_info.get('name', 'Unknown') if item_info else 'Unknown',
+                        'error': error_msg
+                    })
+
+            # Small delay between requests
+            if i < len(failed_items):
+                import time
+                time.sleep(1)
+
+        # Update failed_items list
+        failed_items = first_retry_failed
+
+    # Retry failed items - Second retry pass
+    if failed_items:
+        print(f"\n{'=' * 70}")
+        print(f"RETRY PASS 2: Retrying {len(failed_items)} still-failed items...")
+        print(f"{'=' * 70}\n")
+
+        second_retry_failed = []
+        for i, failed_item in enumerate(failed_items, 1):
+            item_number = failed_item['item_number']
+            success, item_info = check_and_update(item_number, i, len(failed_items), "RETRY 2 - ")
+
+            if not success:
+                # Update error message in case it changed
+                error_msg = item_info.get('error', 'No response') if item_info else 'No response'
+                # Only keep in final failed list if it's not a "item not found" error
+                if error_msg != 'Item not found in search':
+                    second_retry_failed.append({
+                        'item_number': item_number,
+                        'name': item_info.get('name', 'Unknown') if item_info else 'Unknown',
+                        'error': error_msg
+                    })
+
+            # Small delay between requests
+            if i < len(failed_items):
+                import time
+                time.sleep(1)
+
+        # Final failed items list
+        failed_items = second_retry_failed
 
     # Save tracking data
     save_tracking_data(tracking_data)
