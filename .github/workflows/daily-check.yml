@@ -24,6 +24,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Test email
+        env:
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        run: |
+          python -c "
+          import smtplib, os
+          server = smtplib.SMTP('smtp.gmail.com', 587)
+          server.ehlo()
+          server.starttls()
+          server.ehlo()
+          server.login(os.environ['EMAIL_FROM'], os.environ['EMAIL_PASSWORD'])
+          server.sendmail(os.environ['EMAIL_FROM'], os.environ['EMAIL_TO'], 'Subject: GitHub Actions Test\n\nEmail from GitHub Actions works!')
+          server.quit()
+          print('Sent!')
+          "
+
       - name: Run inventory check
         env:
           UNWRANGLE_API_KEY: ${{ secrets.UNWRANGLE_API_KEY }}
@@ -31,7 +49,7 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           SMTP_SERVER: "smtp.gmail.com"
-          SMTP_PORT: "587" 
+          SMTP_PORT: "587"
         run: |
           python inventory_checker.py
 
