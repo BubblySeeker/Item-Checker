@@ -29,15 +29,17 @@ SMTP_PORT = int(os.getenv('SMTP_PORT') or '465')
 
 
 def load_items():
-    """Load item numbers from Excel file."""
+    """Load item numbers and names from Excel file."""
     print("Loading items from Excel...")
     df = pd.read_excel(EXCEL_FILE, skiprows=1)
-    item_column = df.iloc[:, 0]
-    items = item_column.dropna()
-    items = items[items != 'Item Number']
-    item_list = [str(int(float(x))) for x in items if pd.notna(x)]
+    df = df[df.iloc[:, 0] != 'Item Number'].dropna(subset=[df.columns[0]])
+    item_list = [str(int(float(x))) for x in df.iloc[:, 0] if pd.notna(x)]
+    item_names = {
+        str(int(float(row.iloc[0]))): str(row.iloc[1]) if pd.notna(row.iloc[1]) else ''
+        for _, row in df.iterrows() if pd.notna(row.iloc[0])
+    }
     print(f"✅ Loaded {len(item_list)} items")
-    return item_list
+    return item_list, item_names
 
 
 def load_tracking_data():
@@ -270,14 +272,16 @@ def send_email_report(oos_items, in_stock_items, failed_items, not_found_items, 
         <table>
             <tr>
                 <th>Item #</th>
+                <th>Item Name</th>
                 <th>Status</th>
             </tr>
         """
 
-        for item_num in sorted(not_found_items):
+        for item in not_found_items:
             html += f"""
             <tr class="warning">
-                <td>{item_num}</td>
+                <td>{item['item_number']}</td>
+                <td>{item['name']}</td>
                 <td style="color: orange; font-weight: bold;">NOT FOUND ON WEBSITE</td>
             </tr>
             """
@@ -378,7 +382,7 @@ def main():
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}\n")
 
     # Load items and tracking data
-    items = load_items()
+    items, item_names = load_items()
     tracking_data = load_tracking_data()
 
     # Check each item
@@ -535,7 +539,10 @@ def main():
     # Find items not found on website (items in Excel but not in results)
     checked_item_numbers = set(r['item_number'] for r in results)
     excel_item_numbers = set(items)
-    not_found_items = sorted(excel_item_numbers - checked_item_numbers)
+    not_found_items = sorted(
+        [{'item_number': n, 'name': item_names.get(n, '')} for n in excel_item_numbers - checked_item_numbers],
+        key=lambda x: x['item_number']
+    )
 
     # Send email report
     send_email_report(oos_items, in_stock_items, failed_items, not_found_items, len(items))
