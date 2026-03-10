@@ -357,7 +357,10 @@ def send_email_report(oos_items, in_stock_items, failed_items, not_found_items, 
     # Send email
     try:
         print(f"\n📧 Sending email report to {EMAIL_TO}...")
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(EMAIL_FROM, EMAIL_PASSWORD)
             server.send_message(msg)
         print("✅ Email sent successfully!")

@@ -9,7 +9,6 @@ __pycache__/
 *.so
 
 # Data files
-oos_tracking.json
 results_*.json
 unwrangle_response_*.json
 *.html
