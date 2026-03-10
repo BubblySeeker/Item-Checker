@@ -354,6 +354,8 @@ def send_email_report(oos_items, in_stock_items, failed_items, not_found_items, 
     html_part = MIMEText(html, 'html')
     msg.attach(html_part)
 
+    SMTP_SERVER = "smtp.gmail.com"
+    
     # Send email
     try:
         print(f"\n📧 Sending email report to {EMAIL_TO}...")
