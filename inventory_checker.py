@@ -25,7 +25,7 @@ EMAIL_FROM = os.getenv('EMAIL_FROM')
 EMAIL_TO = os.getenv('EMAIL_TO')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
 SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT') or '587')
+SMTP_PORT = int(os.getenv('SMTP_PORT') or '465')
 
 
 def load_items():
@@ -357,8 +357,7 @@ def send_email_report(oos_items, in_stock_items, failed_items, not_found_items, 
     # Send email
     try:
         print(f"\n📧 Sending email report to {EMAIL_TO}...")
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
             server.login(EMAIL_FROM, EMAIL_PASSWORD)
             server.send_message(msg)
         print("✅ Email sent successfully!")
